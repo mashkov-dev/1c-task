@@ -62,6 +62,7 @@ private:
         bool exists = false;
         double expectedDays = 0.0;
         std::vector<std::size_t> edges;
+        std::vector<std::size_t> vertices;
     };
 
     void exploreReachable(std::size_t vertex, std::vector<char>& swept) {
@@ -144,6 +145,7 @@ private:
         path.exists = true;
         path.expectedDays = distance[target - 1];
         std::size_t vertex = target;
+        path.vertices.push_back(vertex);
         while (parentEdge[vertex - 1] != -2) {
             const int edgeId = parentEdge[vertex - 1];
             if (edgeId == -1) {
@@ -151,8 +153,10 @@ private:
             }
             path.edges.push_back(static_cast<std::size_t>(edgeId));
             vertex = static_cast<std::size_t>(parentVertex[vertex - 1]);
+            path.vertices.push_back(vertex);
         }
         std::reverse(path.edges.begin(), path.edges.end());
+        std::reverse(path.vertices.begin(), path.vertices.end());
         return path;
     }
 
@@ -160,7 +164,7 @@ private:
         const std::size_t n = graph_.vertexCount();
         const std::size_t m = graph_.edgeCount();
         std::vector<char> plannedEdges(m, false);
-        std::vector<char> selectedTargets(n, false);
+        std::vector<char> plannedVertices(n, false);
         double plannedDays = 0.0;
         int plannedReward = 0;
 
@@ -173,7 +177,7 @@ private:
             double bestRatio = -1.0;
 
             for (std::size_t target = 1; target <= n; ++target) {
-                if (explored_[target - 1] || selectedTargets[target - 1]) {
+                if (explored_[target - 1] || plannedVertices[target - 1]) {
                     continue;
                 }
                 const int reward = graph_.profit(target);
@@ -192,10 +196,23 @@ private:
                         marginalDays += edgeDays(edgeId);
                     }
                 }
+                int marginalReward = 0;
+                for (std::size_t vertex : path.vertices) {
+                    if (!explored_[vertex - 1] && !plannedVertices[vertex - 1]) {
+                        marginalReward += graph_.profit(vertex);
+                    }
+                }
                 const double marginalCost = dayCost_ * marginalDays;
-                const double ratio = marginalCost <= 1e-12
-                    ? std::numeric_limits<double>::infinity()
-                    : reward / marginalCost;
+                double ratio;
+                if (marginalCost <= 1e-12) {
+                    ratio = marginalReward > 0
+                        ? std::numeric_limits<double>::infinity()
+                        : marginalReward < 0
+                            ? -std::numeric_limits<double>::infinity()
+                            : 0.0;
+                } else {
+                    ratio = marginalReward / marginalCost;
+                }
 
                 if (bestTarget == -1 || ratio > bestRatio + 1e-12) {
                     bestTarget = static_cast<int>(target);
@@ -208,9 +225,12 @@ private:
                 break;
             }
 
-            const std::size_t target = static_cast<std::size_t>(bestTarget);
-            selectedTargets[target - 1] = true;
-            plannedReward += graph_.profit(target);
+            for (std::size_t vertex : bestPath.vertices) {
+                if (!explored_[vertex - 1] && !plannedVertices[vertex - 1]) {
+                    plannedVertices[vertex - 1] = true;
+                    plannedReward += graph_.profit(vertex);
+                }
+            }
             for (std::size_t edgeId : bestPath.edges) {
                 if (!plannedEdges[edgeId - 1]) {
                     plannedEdges[edgeId - 1] = true;
